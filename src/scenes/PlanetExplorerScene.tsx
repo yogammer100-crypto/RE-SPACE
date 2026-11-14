@@ -15,7 +15,9 @@ import {
   createMoonTextureSet,
   createOrbitalDustParticles,
   createStarfield,
-  detectSoftwareWebGL
+  detectSoftwareWebGL,
+  isCompactViewportDevice,
+  loadVerifiedPlanetaryTextures
 } from '../utils/planetaryTextures';
 
 export type MarkerCategory = 'rover' | 'lander' | 'instrument' | 'impact';
@@ -123,6 +125,8 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     if (!container) return;
 
     const isSoftwareGl = detectSoftwareWebGL();
+    const isCompact = isCompactViewportDevice();
+    const lowRes = isSoftwareGl || isCompact;
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     let renderer: THREE.WebGLRenderer;
@@ -141,7 +145,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     const height = container.clientHeight || window.innerHeight;
 
     renderer.setSize(width, height);
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, isCompact ? 1.5 : 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.12;
@@ -207,13 +211,13 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     scene.add(starsMid);
     scene.add(orbitalDust);
 
-    // Planet sphere
+    // Planet sphere (procedural micro-relief base + progressive NASA LRO/Viking upgrade)
     const texSet =
       body === 'Moon'
-        ? createMoonTextureSet(renderer, isSoftwareGl)
-        : createMarsTextureSet(renderer, isSoftwareGl);
+        ? createMoonTextureSet(renderer, lowRes)
+        : createMarsTextureSet(renderer, lowRes);
 
-    const planetGeo = new THREE.SphereGeometry(PLANET_RADIUS, 96, 64);
+    const planetGeo = new THREE.SphereGeometry(PLANET_RADIUS, lowRes ? 64 : 96, lowRes ? 48 : 64);
     const planetMat = new THREE.MeshStandardMaterial({
       map: texSet.map,
       bumpMap: texSet.bumpMap,
@@ -773,10 +777,23 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
       e.preventDefault();
       setWebglError(true);
     };
+    const onContextRestored = () => {
+      setWebglError(false);
+      requestRender();
+    };
     renderer.domElement.addEventListener('webglcontextlost', onContextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
 
     (container as HTMLDivElement & { __requestRender?: () => void }).__requestRender = requestRender;
     requestRender();
+
+    void loadVerifiedPlanetaryTextures(
+      body,
+      texSet,
+      lowRes,
+      () => disposed,
+      () => requestRender()
+    );
 
     return () => {
       disposed = true;
@@ -791,6 +808,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
 
       planetGeo.dispose();
       planetMat.dispose();
@@ -842,7 +860,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
   useEffect(() => {
     const el = mountRef.current as (HTMLDivElement & { __requestRender?: () => void }) | null;
     el?.__requestRender?.();
-  }, [sunAzimuthDeg, surveyLighting, autoOrbit, selectedLocationId, hoveredClusterId]);
+  }, [sunAzimuthDeg, surveyLighting, autoOrbit, selectedLocationId, hoveredClusterId, locations]);
 
   if (webglError) {
     return (

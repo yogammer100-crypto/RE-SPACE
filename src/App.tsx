@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode, Suspense, lazy, useMemo, useState } from 'react';
+import React, { Component, ErrorInfo, ReactNode, Suspense, lazy, useMemo, useRef, useState } from 'react';
 import { MotionConfig } from 'motion/react';
 import {
   ALL_ARTIFACTS,
@@ -21,7 +21,8 @@ import {
 } from './data';
 import { AppView, Artifact, CelestialBody, MediaItem, PlanetaryLocation } from './types/space';
 import { Navbar } from './components/Navbar';
-import { WorldSelectorOverlay } from './components/WorldSelectorOverlay';
+import { HomepageExperience } from './components/HomepageExperience';
+import type { HeroScrollChoreographyState } from './scenes/DualWorldHeroScene';
 
 const DualWorldHeroScene = lazy(() =>
   import('./scenes/DualWorldHeroScene').then((m) => ({ default: m.DualWorldHeroScene }))
@@ -126,6 +127,12 @@ export default function App() {
   const [hoveredWorld, setHoveredWorld] = useState<CelestialBody | null>(null);
   const [enteringWorld, setEnteringWorld] = useState<CelestialBody | null>(null);
 
+  const scrollStateRef = useRef<HeroScrollChoreographyState>({
+    totalProgress: 0,
+    storyRecess: 0,
+    horizonSweep: 0
+  });
+
   const artifactsById = useMemo(() => {
     const map: Record<string, Artifact> = {};
     for (const a of ALL_ARTIFACTS) map[a.id] = a;
@@ -169,7 +176,7 @@ export default function App() {
     setEnteringWorld(body);
     setHoveredWorld(body);
 
-    const delay = prefersReducedMotion ? 50 : 620;
+    const delay = prefersReducedMotion ? 50 : 720;
     window.setTimeout(() => {
       setSelectedBody(body);
       setSelectedLocationId(null);
@@ -178,6 +185,7 @@ export default function App() {
       setHoveredWorld(null);
       setPreviousView('home');
       setCurrentView('planet');
+      window.scrollTo({ top: 0, behavior: 'auto' });
     }, delay);
   };
 
@@ -216,6 +224,13 @@ export default function App() {
     setPreviousView(currentView);
     setCurrentView('planet');
     window.scrollTo({ top: 0, behavior: 'auto' });
+  };
+
+  const handleOpenArtifactById = (artifactId: string) => {
+    const artifact = getArtifactById(artifactId);
+    if (artifact) {
+      handleSelectArtifact(artifact);
+    }
   };
 
   const handleOpenMission = (missionId: string) => {
@@ -268,9 +283,10 @@ export default function App() {
       <div className="flex-1">
         <SceneErrorBoundary onReset={() => setCurrentView('home')}>
           {currentView === 'home' && (
-            <main className="relative min-h-[calc(100vh-3.5rem)] w-full overflow-hidden bg-[#05070b]">
+            <main className="relative w-full overflow-x-clip bg-[#04060a]">
               <Suspense fallback={<LoadingState label="Preparing 3D Dual-World Observatory..." />}>
                 <DualWorldHeroScene
+                  scrollStateRef={scrollStateRef}
                   hoveredWorld={hoveredWorld}
                   enteringWorld={enteringWorld}
                   onHoverWorld={setHoveredWorld}
@@ -278,13 +294,18 @@ export default function App() {
                 />
               </Suspense>
 
-              <WorldSelectorOverlay
+              <HomepageExperience
+                scrollStateRef={scrollStateRef}
                 hoveredWorld={hoveredWorld}
                 enteringWorld={enteringWorld}
                 moonArtifactCount={MOON_ARTIFACTS.length}
                 marsArtifactCount={MARS_ARTIFACTS.length}
                 onHoverWorld={setHoveredWorld}
                 onSelectWorld={handleEnterWorldFromHero}
+                onNavigateView={navigateView}
+                onOpenLocationById={handleOpenGlobeAtLocation}
+                onOpenArtifactById={handleOpenArtifactById}
+                onOpenMission={handleOpenMission}
               />
             </main>
           )}

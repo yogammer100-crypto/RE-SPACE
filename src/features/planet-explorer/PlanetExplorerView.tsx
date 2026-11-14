@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
   Compass,
+  Filter,
   HelpCircle,
   RotateCcw,
   Sun,
@@ -13,7 +14,11 @@ import {
   CelestialBody,
   PlanetaryLocation
 } from '../../types/space';
-import { PlanetExplorerScene } from '../../scenes/PlanetExplorerScene';
+import {
+  getLocationMarkerCategory,
+  MarkerCategory,
+  PlanetExplorerScene
+} from '../../scenes/PlanetExplorerScene';
 import { MarkerLegend } from '../../components/MarkerLegend';
 import { formatCoordinates } from '../../utils/coordinates';
 
@@ -44,8 +49,16 @@ export const PlanetExplorerView: React.FC<PlanetExplorerViewProps> = ({
   const [resetSignal, setResetSignal] = useState(0);
   const [focusLocationId, setFocusLocationId] = useState<string | null>(selectedLocationId);
   const [dockExpanded, setDockExpanded] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<'all' | MarkerCategory>('all');
   const [showUnlocatedModal, setShowUnlocatedModal] = useState(false);
   const [zoomPercent, setZoomPercent] = useState(40);
+
+  useEffect(() => {
+    setCategoryFilter('all');
+    setFocusLocationId(selectedLocationId);
+    setSunAzimuthDeg(body === 'Moon' ? 38 : 48);
+  }, [body, selectedLocationId]);
 
   const artifactsById = useMemo(() => {
     const map: Record<string, Artifact> = {};
@@ -55,22 +68,43 @@ export const PlanetExplorerView: React.FC<PlanetExplorerViewProps> = ({
     return map;
   }, [artifacts]);
 
+  const filteredLocations = useMemo(() => {
+    if (categoryFilter === 'all') return locations;
+    return locations.filter(
+      (loc) => getLocationMarkerCategory(loc, artifactsById) === categoryFilter
+    );
+  }, [locations, artifactsById, categoryFilter]);
+
   const sortedLocations = useMemo(
-    () => [...locations].sort((a, b) => a.name.localeCompare(b.name)),
-    [locations]
+    () => [...filteredLocations].sort((a, b) => a.name.localeCompare(b.name)),
+    [filteredLocations]
+  );
+
+  const selectedLocObj = useMemo(
+    () => (selectedLocationId ? locations.find((l) => l.id === selectedLocationId) ?? null : null),
+    [locations, selectedLocationId]
   );
 
   const handleResetView = () => {
     setFocusLocationId(null);
+    setCategoryFilter('all');
     setResetSignal((n) => n + 1);
   };
+
+  const filterOptions: Array<{ value: 'all' | MarkerCategory; label: string }> = [
+    { value: 'all', label: `All Sites (${locations.length})` },
+    { value: 'lander', label: 'Landers' },
+    { value: 'rover', label: 'Rovers' },
+    { value: 'instrument', label: 'Instruments' },
+    { value: 'impact', label: 'Impacts & Debris' }
+  ];
 
   return (
     <div className="relative w-full h-[calc(100vh-6rem)] min-h-[540px] bg-[#05070b] overflow-hidden">
       {/* Interactive 3D Globe Viewport */}
       <PlanetExplorerScene
         body={body}
-        locations={locations}
+        locations={filteredLocations}
         artifactsById={artifactsById}
         selectedLocationId={selectedLocationId}
         sunAzimuthDeg={sunAzimuthDeg}
@@ -84,17 +118,39 @@ export const PlanetExplorerView: React.FC<PlanetExplorerViewProps> = ({
 
       {/* Minimal Top-Left Context Strip */}
       <div className="pointer-events-none absolute top-4 left-4 sm:left-6 z-20 max-w-md">
-        <div className="pointer-events-auto inline-block bg-[#090d16]/90 border border-white/10 rounded-lg px-4 py-2.5">
-          <div className="flex items-center gap-2 text-xs text-cyan-300 font-medium">
+        <div className="pointer-events-auto inline-block bg-[#090d16]/90 border border-white/10 rounded-lg px-4 py-2.5 space-y-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-cyan-300 font-medium">
             <span>{body === 'Moon' ? 'The Moon' : 'Mars'}</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono-tabular text-slate-300">
-              {locations.length} Mapped Sites · Zoom {zoomPercent}%
+              {filteredLocations.length}
+              {categoryFilter !== 'all' ? ` / ${locations.length}` : ''} Mapped Sites · Zoom {zoomPercent}%
             </span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Drag to rotate · Scroll or pinch to zoom · Click any marker to open its location archive
-          </p>
+          {selectedLocObj ? (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-300">
+              <span className="font-medium text-white">{selectedLocObj.name}</span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono-tabular text-slate-400">
+                {formatCoordinates(
+                  selectedLocObj.latitude,
+                  selectedLocObj.longitude,
+                  selectedLocObj.coordinateConfidence
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => onSelectLocation(selectedLocObj)}
+                className="text-cyan-300 hover:text-cyan-200 underline underline-offset-2 ml-1"
+              >
+                Open Archive
+              </button>
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-400">
+              Drag to rotate · Scroll or pinch to zoom · Click any marker to open its location archive
+            </p>
+          )}
         </div>
       </div>
 
@@ -142,6 +198,22 @@ export const PlanetExplorerView: React.FC<PlanetExplorerViewProps> = ({
 
                 <button
                   type="button"
+                  onClick={() => setFiltersOpen((v) => !v)}
+                  aria-expanded={filtersOpen}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-xs font-medium transition-colors whitespace-nowrap ${
+                    filtersOpen || categoryFilter !== 'all'
+                      ? 'border-cyan-400/70 bg-cyan-400/12 text-cyan-200'
+                      : 'border-white/15 bg-[#111827] hover:border-white/30 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <Filter className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>
+                    Filter{categoryFilter !== 'all' ? `: ${categoryFilter}` : ''}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setShowUnlocatedModal(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-amber-400/35 bg-amber-500/10 hover:bg-amber-500/20 text-xs font-medium text-amber-200 transition-colors whitespace-nowrap"
                 >
@@ -176,6 +248,31 @@ export const PlanetExplorerView: React.FC<PlanetExplorerViewProps> = ({
                 </select>
               </div>
             </div>
+
+            {filtersOpen && (
+              <div className="pt-2.5 border-t border-white/10 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] uppercase tracking-wider text-slate-400 mr-1">
+                  Surface Category:
+                </span>
+                {filterOptions.map((opt) => {
+                  const active = categoryFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setCategoryFilter(opt.value)}
+                      className={`px-2.5 py-1 rounded-md border text-[11px] font-medium transition-colors whitespace-nowrap ${
+                        active
+                          ? 'border-cyan-400 bg-cyan-400/16 text-cyan-200'
+                          : 'border-white/12 bg-[#111827] text-slate-300 hover:text-white hover:border-white/30'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Bottom Row: Legend + Solar Illumination */}
             <div className="pt-2.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">

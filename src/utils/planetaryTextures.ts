@@ -4,6 +4,17 @@ export interface PlanetaryTextureSet {
   map: THREE.CanvasTexture;
   bumpMap: THREE.CanvasTexture;
   roughnessMap: THREE.CanvasTexture;
+  albedoCanvas: HTMLCanvasElement;
+  bumpCanvas: HTMLCanvasElement;
+  roughCanvas: HTMLCanvasElement;
+}
+
+export function isCompactViewportDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.innerWidth < 768 ||
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  );
 }
 
 // Deterministic PRNG so planetary geography looks crisp and reproducible
@@ -344,7 +355,14 @@ export function createMoonTextureSet(
   roughnessMap.wrapS = THREE.RepeatWrapping;
   roughnessMap.wrapT = THREE.ClampToEdgeWrapping;
 
-  return { map, bumpMap, roughnessMap };
+  return {
+    map,
+    bumpMap,
+    roughnessMap,
+    albedoCanvas,
+    bumpCanvas,
+    roughCanvas
+  };
 }
 
 export function createMarsTextureSet(
@@ -540,7 +558,132 @@ export function createMarsTextureSet(
   roughnessMap.wrapS = THREE.RepeatWrapping;
   roughnessMap.wrapT = THREE.ClampToEdgeWrapping;
 
-  return { map, bumpMap, roughnessMap };
+  return {
+    map,
+    bumpMap,
+    roughnessMap,
+    albedoCanvas,
+    bumpCanvas,
+    roughCanvas
+  };
+}
+
+function loadLocalImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed to load planetary map: ${src}`));
+    img.src = src;
+  });
+}
+
+/**
+ * Progressively upgrades procedural planetary textures with verified local NASA/ESA
+ * equirectangular maps (LROC + LOLA for Moon, Viking/MGS mosaic for Mars), preserving
+ * procedural regolith micro-relief so close-up orbital zoom stays tactile and sharp.
+ */
+export async function loadVerifiedPlanetaryTextures(
+  body: 'Moon' | 'Mars',
+  texSet: PlanetaryTextureSet,
+  lowRes: boolean,
+  isCancelled: () => boolean,
+  onUpgraded?: () => void
+): Promise<void> {
+  try {
+    const { albedoCanvas, bumpCanvas, roughCanvas, map, bumpMap, roughnessMap } = texSet;
+    const w = albedoCanvas.width;
+    const h = albedoCanvas.height;
+    const albedoCtx = albedoCanvas.getContext('2d');
+    const bumpCtx = bumpCanvas.getContext('2d');
+    const roughCtx = roughCanvas.getContext('2d');
+    if (!albedoCtx || !bumpCtx || !roughCtx) return;
+
+    if (body === 'Moon') {
+      const [albedoImg, demImg] = await Promise.all([
+        loadLocalImage('/textures/moon_albedo_lroc.jpg'),
+        loadLocalImage('/textures/moon_dem_lola.jpg')
+      ]);
+      if (isCancelled()) return;
+
+      // Keep crisp procedural micro-detail blended gently with genuine LROC global color mosaic
+      const tmp = document.createElement('canvas');
+      tmp.width = w;
+      tmp.height = h;
+      const tCtx = tmp.getContext('2d');
+      if (!tCtx) return;
+
+      tCtx.drawImage(albedoImg, 0, 0, w, h);
+      albedoCtx.save();
+      albedoCtx.globalCompositeOperation = 'source-over';
+      albedoCtx.globalAlpha = 0.88;
+      albedoCtx.drawImage(tmp, 0, 0, w, h);
+      albedoCtx.restore();
+
+      // Composite genuine LOLA laser-altimetry topography onto procedural crater micro-bump
+      tCtx.clearRect(0, 0, w, h);
+      tCtx.drawImage(demImg, 0, 0, w, h);
+      bumpCtx.save();
+      bumpCtx.globalCompositeOperation = 'source-over';
+      bumpCtx.globalAlpha = 0.72;
+      bumpCtx.drawImage(tmp, 0, 0, w, h);
+      bumpCtx.restore();
+    } else {
+      const src = lowRes ? '/textures/mars_albedo_1k.jpg' : '/textures/mars_albedo_2k.jpg';
+      const marsImg = await loadLocalImage(src);
+      if (isCancelled()) return;
+
+      const tmp = document.createElement('canvas');
+      tmp.width = w;
+      tmp.height = h;
+      const tCtx = tmp.getContext('2d');
+      if (!tCtx) return;
+
+      tCtx.drawImage(marsImg, 0, 0, w, h);
+      albedoCtx.save();
+      albedoCtx.globalCompositeOperation = 'source-over';
+      albedoCtx.globalAlpha = 0.92;
+      albedoCtx.drawImage(tmp, 0, 0, w, h);
+      albedoCtx.restore();
+
+      // Derive Martian topographic micro-relief & polar ice roughness from genuine albedo features
+      const imgData = tCtx.getImageData(0, 0, w, h);
+      const bumpData = bumpCtx.getImageData(0, 0, w, h);
+      const roughData = roughCtx.getImageData(0, 0, w, h);
+      const srcPx = imgData.data;
+      const bPx = bumpData.data;
+      const rPx = roughData.data;
+
+      for (let i = 0; i < srcPx.length; i += 4) {
+        const r = srcPx[i];
+        const g = srcPx[i + 1];
+        const b = srcPx[i + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        // Blend procedural topographic relief (bPx) with albedo-derived relief detail
+        const blendedBump = Math.min(255, Math.max(0, bPx[i] * 0.58 + lum * 0.42));
+        bPx[i] = blendedBump;
+        bPx[i + 1] = blendedBump;
+        bPx[i + 2] = blendedBump;
+
+        // Bright polar ice caps smoother than dusty basalt regolith
+        const isPolarIce = lum > 195 && Math.abs(r - b) < 35;
+        if (isPolarIce) {
+          rPx[i] = 152;
+          rPx[i + 1] = 152;
+          rPx[i + 2] = 152;
+        }
+      }
+      bumpCtx.putImageData(bumpData, 0, 0);
+      roughCtx.putImageData(roughData, 0, 0);
+    }
+
+    map.needsUpdate = true;
+    bumpMap.needsUpdate = true;
+    roughnessMap.needsUpdate = true;
+    onUpgraded?.();
+  } catch (err) {
+    // Procedural base textures remain active if local decode fails
+    console.warn('Planetary map upgrade skipped:', err);
+  }
 }
 
 export function createMarsAtmosphereMesh(radius: number): THREE.Mesh {
