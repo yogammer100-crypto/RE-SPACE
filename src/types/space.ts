@@ -173,3 +173,27 @@ export type AppView =
   | 'archive'
   | 'science'
   | 'sources';
+
+export type MediaClass =
+  | 'Surface Photograph'
+  | 'Orbital Reconnaissance'
+  | 'Spacecraft Photograph'
+  | 'Official Agency Illustration';
+
+export interface MediaItem {
+  id: string;
+  title: string;
+  url: string;
+  sourcePageUrl: string;
+  agency: string;
+  catalogId: string;
+  date: string | null;
+  mediaClass: MediaClass;
+  caption: string;
+  alt: string;
+  body: CelestialBody;
+  locationIds: string[];
+  artifactIds: string[];
+  isHeroCandidate?: boolean;
+}
+

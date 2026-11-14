@@ -8,13 +8,16 @@ import {
 import {
   Artifact,
   CelestialBody,
+  MediaItem,
   MissionRecord,
   OutcomeCategory
 } from '../../types/space';
+import { ArchivalImage, ArchivalLightbox } from '../../components/ArchivalImage';
 
 interface MissionExplorerViewProps {
   missions: MissionRecord[];
   artifactsById: Record<string, Artifact>;
+  artifactMediaMap?: Record<string, MediaItem[]>;
   initialMissionId?: string | null;
   onSelectArtifact: (artifact: Artifact) => void;
   onNavigateToGlobeLocation: (body: CelestialBody, locationId: string) => void;
@@ -23,6 +26,7 @@ interface MissionExplorerViewProps {
 export const MissionExplorerView: React.FC<MissionExplorerViewProps> = ({
   missions,
   artifactsById,
+  artifactMediaMap = {},
   initialMissionId = null,
   onSelectArtifact,
   onNavigateToGlobeLocation
@@ -36,6 +40,7 @@ export const MissionExplorerView: React.FC<MissionExplorerViewProps> = ({
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(
     initialMissionId ?? missions[0]?.id ?? null
   );
+  const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
 
   const operators = useMemo(
     () => Array.from(new Set(missions.map((m) => m.operator))).sort(),
@@ -74,6 +79,21 @@ export const MissionExplorerView: React.FC<MissionExplorerViewProps> = ({
       null,
     [filteredMissions, selectedMissionId]
   );
+
+  const activeMissionMedia = useMemo(() => {
+    if (!activeMission) return [];
+    const seen = new Set<string>();
+    const list: MediaItem[] = [];
+    for (const aid of activeMission.artifactIds) {
+      for (const item of artifactMediaMap[aid] ?? []) {
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          list.push(item);
+        }
+      }
+    }
+    return list;
+  }, [activeMission, artifactMediaMap]);
 
   return (
     <div className="min-h-[calc(100vh-3.5rem)] bg-[#05070b] text-slate-100">
@@ -307,6 +327,25 @@ export const MissionExplorerView: React.FC<MissionExplorerViewProps> = ({
                     </p>
                   )}
 
+                  {activeMissionMedia.length > 0 && (
+                    <div className="space-y-3 pt-2 border-t border-white/10">
+                      <h3 className="text-xs uppercase tracking-wider text-slate-400 font-medium">
+                        Mission Archival Photography ({activeMissionMedia.length})
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        {activeMissionMedia.slice(0, 2).map((item) => (
+                          <ArchivalImage
+                            key={item.id}
+                            item={item}
+                            aspectClass="aspect-[16/10]"
+                            compact
+                            onInspect={setLightboxItem}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-2.5">
                     <h3 className="text-xs uppercase tracking-wider text-slate-400 font-medium">
                       Documented Surface Artifacts ({activeMission.artifactIds.length})
@@ -315,6 +354,7 @@ export const MissionExplorerView: React.FC<MissionExplorerViewProps> = ({
                       {activeMission.artifactIds.map((aid) => {
                         const art = artifactsById[aid];
                         if (!art) return null;
+                        const thumb = artifactMediaMap[aid]?.[0] ?? null;
                         return (
                           <button
                             key={art.id}
@@ -322,12 +362,23 @@ export const MissionExplorerView: React.FC<MissionExplorerViewProps> = ({
                             onClick={() => onSelectArtifact(art)}
                             className="w-full text-left p-3.5 rounded-lg border border-white/10 bg-[#111827] hover:border-cyan-400/50 transition-colors flex items-center justify-between gap-3"
                           >
-                            <div>
-                              <div className="text-sm font-medium text-white">
-                                {art.name}
-                              </div>
-                              <div className="text-xs text-slate-400 mt-0.5">
-                                {art.type} · {art.status}
+                            <div className="flex items-center gap-3 min-w-0">
+                              {thumb && (
+                                <img
+                                  src={thumb.url}
+                                  alt={thumb.alt}
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer"
+                                  className="w-14 h-10 rounded object-cover border border-white/10 shrink-0 bg-[#060910]"
+                                />
+                              )}
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-white truncate">
+                                  {art.name}
+                                </div>
+                                <div className="text-xs text-slate-400 mt-0.5 truncate">
+                                  {art.type} · {art.status}
+                                </div>
                               </div>
                             </div>
                             <ArrowRight
@@ -418,6 +469,8 @@ export const MissionExplorerView: React.FC<MissionExplorerViewProps> = ({
           </div>
         </section>
       </div>
+
+      <ArchivalLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
     </div>
   );
 };

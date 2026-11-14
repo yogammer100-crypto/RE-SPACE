@@ -3,9 +3,11 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CelestialBody } from '../types/space';
 import {
+  createDistantSunSprite,
   createMarsAtmosphereMesh,
   createMarsTextureSet,
   createMoonTextureSet,
+  createOrbitalDustParticles,
   createStarfield,
   detectSoftwareWebGL
 } from '../utils/planetaryTextures';
@@ -55,80 +57,108 @@ export const DualWorldHeroScene: React.FC<DualWorldHeroSceneProps> = ({
       return;
     }
 
-    const width = container.clientWidth || window.innerWidth;
-    const height = container.clientHeight || window.innerHeight;
+    let viewportWidth = container.clientWidth || window.innerWidth;
+    let viewportHeight = container.clientHeight || window.innerHeight;
 
-    renderer.setSize(width, height);
+    renderer.setSize(viewportWidth, viewportHeight);
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 1.1;
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#05070b');
+    scene.background = new THREE.Color('#04060a');
 
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = envTex;
     pmrem.dispose();
 
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 200);
-    camera.position.set(0, 0.15, 8.2);
+    const camera = new THREE.PerspectiveCamera(42, viewportWidth / viewportHeight, 0.1, 240);
+    camera.position.set(0, 0.12, 8.0);
 
-    // Three-point cosmic illumination: warm solar key, cool space hemisphere fill, subtle rim
-    const sunKey = new THREE.DirectionalLight('#fff5e6', 2.8);
-    sunKey.position.set(7, 3.2, 6.5);
+    // Three-point deep-space illumination aligned with distant solar corona
+    const sunKey = new THREE.DirectionalLight('#fff4e3', 3.05);
+    sunKey.position.set(9, 4.2, 7);
     scene.add(sunKey);
 
-    const spaceHemi = new THREE.HemisphereLight('#334e78', '#090d16', 0.36);
+    const spaceHemi = new THREE.HemisphereLight('#2d4772', '#060912', 0.34);
     scene.add(spaceHemi);
 
-    const rimLight = new THREE.DirectionalLight('#67e8f9', 0.45);
-    rimLight.position.set(-6, -2, -5);
+    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.52);
+    rimLight.position.set(-7, -2.5, -5.5);
     scene.add(rimLight);
 
-    const stars = createStarfield(isSoftwareGl ? 700 : 1400, 75);
-    scene.add(stars);
+    // Multi-depth starfield layers for subtle parallax
+    const starsFar = createStarfield(isSoftwareGl ? 450 : 1000, 118, 0.22, 0.72, 1958);
+    const starsMid = createStarfield(isSoftwareGl ? 300 : 700, 74, 0.31, 0.88, 1969);
+    const starsNear = createStarfield(isSoftwareGl ? 150 : 320, 42, 0.38, 0.65, 2021);
+    scene.add(starsFar);
+    scene.add(starsMid);
+    scene.add(starsNear);
+
+    // Distant solar corona positioned far in upper-right cosmic space
+    const sunSprite = createDistantSunSprite(new THREE.Vector3(24, 11.5, -36));
+    scene.add(sunSprite);
+
+    // Subtle orbital dust cloud spanning deep space
+    const orbitalDust = createOrbitalDustParticles(isSoftwareGl ? 90 : 220, 2.2, 8.2, '#94a3b8');
+    scene.add(orbitalDust);
 
     // Moon textures & mesh
     const moonTex = createMoonTextureSet(renderer, isSoftwareGl);
-    const moonGeo = new THREE.SphereGeometry(1, 64, 48);
+    const moonGeo = new THREE.SphereGeometry(1, 72, 54);
     const moonMat = new THREE.MeshStandardMaterial({
       map: moonTex.map,
       bumpMap: moonTex.bumpMap,
-      bumpScale: 0.032,
+      bumpScale: 0.036,
       roughnessMap: moonTex.roughnessMap,
       roughness: 0.92,
       metalness: 0.02
     });
     const moonMesh = new THREE.Mesh(moonGeo, moonMat);
     moonMesh.userData.world = 'Moon';
-    moonMesh.rotation.y = -Math.PI * 0.45; // Showcase lunar near side initially
+    moonMesh.rotation.y = -Math.PI * 0.44;
+    moonMesh.rotation.z = THREE.MathUtils.degToRad(6.6);
 
-    const moonRingGeo = new THREE.RingGeometry(1.12, 1.135, 72);
+    const moonRingGeo = new THREE.RingGeometry(1.1, 1.116, 80);
     const moonRingMat = new THREE.MeshBasicMaterial({
       color: '#22d3ee',
       transparent: true,
-      opacity: 0,
+      opacity: 0.1,
       side: THREE.DoubleSide
     });
     const moonRing = new THREE.Mesh(moonRingGeo, moonRingMat);
+
+    // Faint tilted orbital track around Moon
+    const moonOrbitGeo = new THREE.RingGeometry(1.36, 1.366, 96);
+    const moonOrbitMat = new THREE.MeshBasicMaterial({
+      color: '#64748b',
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide
+    });
+    const moonOrbit = new THREE.Mesh(moonOrbitGeo, moonOrbitMat);
+    moonOrbit.rotation.x = Math.PI * 0.42;
+    moonOrbit.rotation.y = 0.25;
+
     const moonGroup = new THREE.Group();
     moonGroup.add(moonMesh);
     moonGroup.add(moonRing);
+    moonGroup.add(moonOrbit);
     scene.add(moonGroup);
 
     // Mars textures & mesh
     const marsTex = createMarsTextureSet(renderer, isSoftwareGl);
-    const marsGeo = new THREE.SphereGeometry(1, 64, 48);
+    const marsGeo = new THREE.SphereGeometry(1, 72, 54);
     const marsMat = new THREE.MeshStandardMaterial({
       map: marsTex.map,
       bumpMap: marsTex.bumpMap,
-      bumpScale: 0.028,
+      bumpScale: 0.032,
       roughnessMap: marsTex.roughnessMap,
       roughness: 0.88,
       metalness: 0.03
@@ -136,59 +166,77 @@ export const DualWorldHeroScene: React.FC<DualWorldHeroSceneProps> = ({
     const marsMesh = new THREE.Mesh(marsGeo, marsMat);
     marsMesh.userData.world = 'Mars';
     marsMesh.rotation.y = -Math.PI * 0.28;
+    marsMesh.rotation.z = THREE.MathUtils.degToRad(25.19); // Authentic axial tilt
 
     const marsAtmo = createMarsAtmosphereMesh(1.0);
-    const marsRingGeo = new THREE.RingGeometry(1.12, 1.135, 72);
+    const marsRingGeo = new THREE.RingGeometry(1.1, 1.116, 80);
     const marsRingMat = new THREE.MeshBasicMaterial({
       color: '#22d3ee',
       transparent: true,
-      opacity: 0,
+      opacity: 0.1,
       side: THREE.DoubleSide
     });
     const marsRing = new THREE.Mesh(marsRingGeo, marsRingMat);
+
+    const marsOrbitGeo = new THREE.RingGeometry(1.38, 1.386, 96);
+    const marsOrbitMat = new THREE.MeshBasicMaterial({
+      color: '#c27b5c',
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide
+    });
+    const marsOrbit = new THREE.Mesh(marsOrbitGeo, marsOrbitMat);
+    marsOrbit.rotation.x = Math.PI * 0.44;
+    marsOrbit.rotation.y = -0.22;
 
     const marsGroup = new THREE.Group();
     marsGroup.add(marsMesh);
     marsGroup.add(marsAtmo);
     marsGroup.add(marsRing);
+    marsGroup.add(marsOrbit);
     scene.add(marsGroup);
 
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
     }
 
+    let baseCamZ = 8.0;
     const layoutPlanets = (w: number, h: number) => {
+      viewportWidth = w;
+      viewportHeight = h;
       const aspect = w / Math.max(1, h);
       const isCompact = aspect < 1.08;
       if (isCompact) {
         camera.fov = 48;
-        camera.position.z = 9.0;
-        moonGroup.userData.basePos = new THREE.Vector3(0, 1.55, 0);
-        moonGroup.userData.baseScale = 1.08;
-        marsGroup.userData.basePos = new THREE.Vector3(0, -1.55, 0);
-        marsGroup.userData.baseScale = 1.12;
+        baseCamZ = 8.6;
+        moonGroup.userData.basePos = new THREE.Vector3(0, 1.52, 0);
+        moonGroup.userData.baseScale = 1.18;
+        marsGroup.userData.basePos = new THREE.Vector3(0, -1.52, 0);
+        marsGroup.userData.baseScale = 1.24;
       } else {
         camera.fov = 42;
-        camera.position.z = 8.2;
-        const spread = Math.min(2.75, aspect * 1.52);
-        moonGroup.userData.basePos = new THREE.Vector3(-spread, -0.08, 0);
-        moonGroup.userData.baseScale = 1.44;
-        marsGroup.userData.basePos = new THREE.Vector3(spread, -0.08, 0);
-        marsGroup.userData.baseScale = 1.48;
+        baseCamZ = 7.75;
+        const spread = Math.min(2.65, aspect * 1.48);
+        moonGroup.userData.basePos = new THREE.Vector3(-spread, -0.04, 0);
+        moonGroup.userData.baseScale = 1.62;
+        marsGroup.userData.basePos = new THREE.Vector3(spread, -0.04, 0);
+        marsGroup.userData.baseScale = 1.68;
       }
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
     };
 
-    layoutPlanets(width, height);
+    layoutPlanets(viewportWidth, viewportHeight);
     moonGroup.position.copy(moonGroup.userData.basePos);
     moonGroup.scale.setScalar(moonGroup.userData.baseScale);
     marsGroup.position.copy(marsGroup.userData.basePos);
     marsGroup.scale.setScalar(marsGroup.userData.baseScale);
 
-    // Raycasting for direct hover & click on 3D spheres
+    // Raycasting & subtle pointer parallax
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+    const pointerTargetOffset = { x: 0, y: 0 };
+    const pointerCurrentOffset = { x: 0, y: 0 };
     let pointerHover: CelestialBody | null = null;
     let pointerDownPos = { x: 0, y: 0 };
 
@@ -205,6 +253,12 @@ export const DualWorldHeroScene: React.FC<DualWorldHeroSceneProps> = ({
     };
 
     const onPointerMove = (e: PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const nx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+      const ny = -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+      pointerTargetOffset.x = nx * 0.22;
+      pointerTargetOffset.y = ny * 0.14;
+
       if (enteringRef.current) return;
       const hit = getHitWorld(e.clientX, e.clientY);
       if (hit !== pointerHover) {
@@ -248,7 +302,7 @@ export const DualWorldHeroScene: React.FC<DualWorldHeroSceneProps> = ({
     };
     renderer.domElement.addEventListener('webglcontextlost', onContextLost);
 
-    const targetCamPos = new THREE.Vector3(0, 0.15, 8.2);
+    const targetCamPos = new THREE.Vector3(0, 0.12, baseCamZ);
     const targetLook = new THREE.Vector3(0, 0, 0);
     const currentLook = new THREE.Vector3(0, 0, 0);
 
@@ -284,9 +338,14 @@ export const DualWorldHeroScene: React.FC<DualWorldHeroSceneProps> = ({
       lastTime = now;
 
       if (!prefersReducedMotion) {
-        moonMesh.rotation.y += dt * 0.055;
-        marsMesh.rotation.y += dt * 0.068;
-        stars.rotation.y += dt * 0.004;
+        moonMesh.rotation.y += dt * 0.048;
+        marsMesh.rotation.y += dt * 0.062;
+        moonOrbit.rotation.z += dt * 0.035;
+        marsOrbit.rotation.z -= dt * 0.032;
+        starsFar.rotation.y += dt * 0.0022;
+        starsMid.rotation.y += dt * 0.0045;
+        starsNear.rotation.y += dt * 0.0075;
+        orbitalDust.rotation.y += dt * 0.016;
       }
 
       const activeHover = hoveredRef.current;
@@ -299,61 +358,83 @@ export const DualWorldHeroScene: React.FC<DualWorldHeroSceneProps> = ({
 
       const moonTargetScale =
         entering === 'Moon'
-          ? moonBaseScale * 1.15
+          ? moonBaseScale * 1.18
           : entering === 'Mars'
-            ? moonBaseScale * 0.85
+            ? moonBaseScale * 0.78
             : activeHover === 'Moon'
-              ? moonBaseScale * 1.055
+              ? moonBaseScale * 1.06
               : moonBaseScale;
 
       const marsTargetScale =
         entering === 'Mars'
-          ? marsBaseScale * 1.15
+          ? marsBaseScale * 1.18
           : entering === 'Moon'
-            ? marsBaseScale * 0.85
+            ? marsBaseScale * 0.78
             : activeHover === 'Mars'
-              ? marsBaseScale * 1.055
+              ? marsBaseScale * 1.06
               : marsBaseScale;
 
-      const sM = THREE.MathUtils.damp(moonGroup.scale.x, moonTargetScale, 6, dt);
-      const sR = THREE.MathUtils.damp(marsGroup.scale.x, marsTargetScale, 6, dt);
-      moonGroup.scale.setScalar(sM);
-      marsGroup.scale.setScalar(sR);
+      moonGroup.scale.setScalar(THREE.MathUtils.damp(moonGroup.scale.x, moonTargetScale, 6, dt));
+      marsGroup.scale.setScalar(THREE.MathUtils.damp(marsGroup.scale.x, marsTargetScale, 6, dt));
 
-      // Subtle selection ring billboarded toward camera
+      // Subtle parallax drift when browsing entrance
+      if (!prefersReducedMotion && !entering) {
+        pointerCurrentOffset.x = THREE.MathUtils.damp(
+          pointerCurrentOffset.x,
+          pointerTargetOffset.x,
+          4,
+          dt
+        );
+        pointerCurrentOffset.y = THREE.MathUtils.damp(
+          pointerCurrentOffset.y,
+          pointerTargetOffset.y,
+          4,
+          dt
+        );
+      } else {
+        pointerCurrentOffset.x = 0;
+        pointerCurrentOffset.y = 0;
+      }
+
+      // Selection reticle ring facing camera
       moonRing.lookAt(camera.position);
       marsRing.lookAt(camera.position);
       moonRingMat.opacity = THREE.MathUtils.damp(
         moonRingMat.opacity,
-        activeHover === 'Moon' || entering === 'Moon' ? 0.55 : 0,
+        entering === 'Moon' ? 0.7 : activeHover === 'Moon' ? 0.58 : 0.08,
         8,
         dt
       );
       marsRingMat.opacity = THREE.MathUtils.damp(
         marsRingMat.opacity,
-        activeHover === 'Mars' || entering === 'Mars' ? 0.55 : 0,
+        entering === 'Mars' ? 0.7 : activeHover === 'Mars' ? 0.58 : 0.08,
         8,
         dt
       );
 
-      // Cinematic camera transition when entering a world
+      // Cinematic camera fly-in when entering a world
       if (entering === 'Moon') {
-        targetCamPos.set(moonBasePos.x * 0.85, moonBasePos.y, 4.4);
+        targetCamPos.set(moonBasePos.x * 0.96, moonBasePos.y, 3.85);
         targetLook.copy(moonBasePos);
       } else if (entering === 'Mars') {
-        targetCamPos.set(marsBasePos.x * 0.85, marsBasePos.y, 4.4);
+        targetCamPos.set(marsBasePos.x * 0.96, marsBasePos.y, 3.85);
         targetLook.copy(marsBasePos);
       } else {
-        targetCamPos.set(0, 0.15, (width / Math.max(1, height)) < 1.08 ? 9.0 : 8.2);
-        targetLook.set(0, 0, 0);
+        targetCamPos.set(
+          pointerCurrentOffset.x,
+          0.12 + pointerCurrentOffset.y,
+          baseCamZ
+        );
+        targetLook.set(pointerCurrentOffset.x * 0.25, pointerCurrentOffset.y * 0.25, 0);
       }
 
-      camera.position.x = THREE.MathUtils.damp(camera.position.x, targetCamPos.x, 4.5, dt);
-      camera.position.y = THREE.MathUtils.damp(camera.position.y, targetCamPos.y, 4.5, dt);
-      camera.position.z = THREE.MathUtils.damp(camera.position.z, targetCamPos.z, 4.5, dt);
-      currentLook.x = THREE.MathUtils.damp(currentLook.x, targetLook.x, 5, dt);
-      currentLook.y = THREE.MathUtils.damp(currentLook.y, targetLook.y, 5, dt);
-      currentLook.z = THREE.MathUtils.damp(currentLook.z, targetLook.z, 5, dt);
+      const camDamp = entering ? 4.8 : 6.0;
+      camera.position.x = THREE.MathUtils.damp(camera.position.x, targetCamPos.x, camDamp, dt);
+      camera.position.y = THREE.MathUtils.damp(camera.position.y, targetCamPos.y, camDamp, dt);
+      camera.position.z = THREE.MathUtils.damp(camera.position.z, targetCamPos.z, camDamp, dt);
+      currentLook.x = THREE.MathUtils.damp(currentLook.x, targetLook.x, camDamp + 0.5, dt);
+      currentLook.y = THREE.MathUtils.damp(currentLook.y, targetLook.y, camDamp + 0.5, dt);
+      currentLook.z = THREE.MathUtils.damp(currentLook.z, targetLook.z, camDamp + 0.5, dt);
       camera.lookAt(currentLook);
 
       renderer.render(scene, camera);
@@ -381,6 +462,8 @@ export const DualWorldHeroScene: React.FC<DualWorldHeroSceneProps> = ({
       moonMat.dispose();
       moonRingGeo.dispose();
       moonRingMat.dispose();
+      moonOrbitGeo.dispose();
+      moonOrbitMat.dispose();
       moonTex.map.dispose();
       moonTex.bumpMap.dispose();
       moonTex.roughnessMap.dispose();
@@ -391,12 +474,19 @@ export const DualWorldHeroScene: React.FC<DualWorldHeroSceneProps> = ({
       (marsAtmo.material as THREE.Material).dispose();
       marsRingGeo.dispose();
       marsRingMat.dispose();
+      marsOrbitGeo.dispose();
+      marsOrbitMat.dispose();
       marsTex.map.dispose();
       marsTex.bumpMap.dispose();
       marsTex.roughnessMap.dispose();
 
-      stars.geometry.dispose();
-      (stars.material as THREE.Material).dispose();
+      [starsFar, starsMid, starsNear, orbitalDust].forEach((pts) => {
+        pts.geometry.dispose();
+        (pts.material as THREE.Material).dispose();
+      });
+      (sunSprite.material as THREE.SpriteMaterial).map?.dispose();
+      sunSprite.material.dispose();
+
       envTex.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {

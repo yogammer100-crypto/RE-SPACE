@@ -172,29 +172,30 @@ function addProceduralRegolithGrain(
     const polarBlend = Math.max(0, Math.abs(v - 0.5) * 2 - 0.84) / 0.16;
     for (let x = 0; x < w; x++) {
       const idx = (y * w + x) * 4;
-      const n1 = Math.sin(x * 0.045 + Math.cos(y * 0.04) * 2.2) * Math.cos(y * 0.05);
-      const n2 = Math.sin(x * 0.16 - y * 0.11) * 0.5;
-      const micro = (rand() - 0.5) * 18;
-      const delta = n1 * 9 + n2 * 6 + micro;
+      const n1 = Math.sin(x * 0.042 + Math.cos(y * 0.038) * 2.4) * Math.cos(y * 0.048);
+      const n2 = Math.sin(x * 0.14 - y * 0.11) * 0.55;
+      const n3 = Math.cos(x * 0.31 + y * 0.27) * 0.32;
+      const micro = (rand() - 0.5) * 22;
+      const delta = n1 * 11 + n2 * 7 + n3 * 4 + micro;
 
       if (isMars) {
-        a[idx] = Math.min(255, Math.max(0, a[idx] + delta * 1.1));
-        a[idx + 1] = Math.min(255, Math.max(0, a[idx + 1] + delta * 0.72));
-        a[idx + 2] = Math.min(255, Math.max(0, a[idx + 2] + delta * 0.45));
+        a[idx] = Math.min(255, Math.max(0, a[idx] + delta * 1.15));
+        a[idx + 1] = Math.min(255, Math.max(0, a[idx + 1] + delta * 0.74));
+        a[idx + 2] = Math.min(255, Math.max(0, a[idx + 2] + delta * 0.44));
       } else {
-        a[idx] = Math.min(255, Math.max(0, a[idx] + delta));
-        a[idx + 1] = Math.min(255, Math.max(0, a[idx + 1] + delta));
-        a[idx + 2] = Math.min(255, Math.max(0, a[idx + 2] + delta * 1.02));
+        a[idx] = Math.min(255, Math.max(0, a[idx] + delta * 1.05));
+        a[idx + 1] = Math.min(255, Math.max(0, a[idx + 1] + delta * 1.04));
+        a[idx + 2] = Math.min(255, Math.max(0, a[idx + 2] + delta * 1.06));
       }
 
-      const bumpVal = Math.min(255, Math.max(0, b[idx] + delta * 1.3));
+      const bumpVal = Math.min(255, Math.max(0, b[idx] + delta * 1.45));
       b[idx] = bumpVal;
       b[idx + 1] = bumpVal;
       b[idx + 2] = bumpVal;
 
-      // Roughness: highlands/dust rougher (225-248), icy poles or smooth maria slightly lower (190-220)
-      const roughBase = isMars ? 225 - polarBlend * 55 : 230;
-      const roughVal = Math.min(255, Math.max(130, roughBase + micro * 0.7));
+      // Roughness: highlands/dust rougher (222-248), icy poles or smooth maria slightly lower (140-218)
+      const roughBase = isMars ? 224 - polarBlend * 58 : 228;
+      const roughVal = Math.min(255, Math.max(128, roughBase + micro * 0.75));
       r[idx] = roughVal;
       r[idx + 1] = roughVal;
       r[idx + 2] = roughVal;
@@ -543,14 +544,15 @@ export function createMarsTextureSet(
 }
 
 export function createMarsAtmosphereMesh(radius: number): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(radius * 1.032, 64, 48);
+  const geo = new THREE.SphereGeometry(radius * 1.036, 64, 48);
   const mat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     side: THREE.BackSide,
     blending: THREE.AdditiveBlending,
     uniforms: {
-      uGlowColor: { value: new THREE.Color('#e07a52') }
+      uGlowColor: { value: new THREE.Color('#e2845b') },
+      uTwilightColor: { value: new THREE.Color('#7ca8d8') }
     },
     vertexShader: `
       varying vec3 vNormal;
@@ -564,21 +566,29 @@ export function createMarsAtmosphereMesh(radius: number): THREE.Mesh {
     `,
     fragmentShader: `
       uniform vec3 uGlowColor;
+      uniform vec3 uTwilightColor;
       varying vec3 vNormal;
       varying vec3 vViewDir;
       void main() {
-        float rim = pow(clamp(0.65 - dot(vNormal, -vViewDir), 0.0, 1.0), 3.2);
-        gl_FragColor = vec4(uGlowColor, rim * 0.42);
+        float fresnel = pow(clamp(0.68 - dot(vNormal, -vViewDir), 0.0, 1.0), 3.0);
+        vec3 tint = mix(uTwilightColor, uGlowColor, 0.72);
+        gl_FragColor = vec4(tint, fresnel * 0.46);
       }
     `
   });
   return new THREE.Mesh(geo, mat);
 }
 
-export function createStarfield(count = 1600, radius = 95): THREE.Points {
+export function createStarfield(
+  count = 1600,
+  radius = 95,
+  size = 0.28,
+  opacity = 0.85,
+  seed = 1958
+): THREE.Points {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
-  const rand = mulberry32(1958);
+  const rand = mulberry32(seed);
   const c = new THREE.Color();
 
   for (let i = 0; i < count; i++) {
@@ -593,11 +603,11 @@ export function createStarfield(count = 1600, radius = 95): THREE.Points {
     positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
 
     const temp = rand();
-    if (temp > 0.85) c.set('#cbdcf7');
-    else if (temp > 0.65) c.set('#f5ead8');
-    else c.set('#dce4ef');
+    if (temp > 0.84) c.set('#bdd7ff');
+    else if (temp > 0.64) c.set('#f8ebd7');
+    else c.set('#e2e8f0');
 
-    const brightness = 0.45 + rand() * 0.55;
+    const brightness = 0.4 + rand() * 0.6;
     colors[i * 3] = c.r * brightness;
     colors[i * 3 + 1] = c.g * brightness;
     colors[i * 3 + 2] = c.b * brightness;
@@ -608,14 +618,72 @@ export function createStarfield(count = 1600, radius = 95): THREE.Points {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   const mat = new THREE.PointsMaterial({
-    size: 0.28,
+    size,
     vertexColors: true,
     transparent: true,
-    opacity: 0.85,
-    sizeAttenuation: true
+    opacity,
+    sizeAttenuation: true,
+    depthWrite: false
   });
 
   return new THREE.Points(geo, mat);
+}
+
+export function createOrbitalDustParticles(
+  count = 220,
+  minRadius = 2.6,
+  maxRadius = 6.2,
+  colorHex = '#94a3b8'
+): THREE.Points {
+  const positions = new Float32Array(count * 3);
+  const rand = mulberry32(202604);
+  for (let i = 0; i < count; i++) {
+    const angle = rand() * Math.PI * 2;
+    const r = minRadius + rand() * (maxRadius - minRadius);
+    const y = (rand() - 0.5) * 2.4;
+    positions[i * 3] = Math.cos(angle) * r;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = Math.sin(angle) * r;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.PointsMaterial({
+    color: colorHex,
+    size: 0.032,
+    transparent: true,
+    opacity: 0.36,
+    sizeAttenuation: true,
+    depthWrite: false
+  });
+  return new THREE.Points(geo, mat);
+}
+
+export function createDistantSunSprite(position: THREE.Vector3): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  const grad = ctx.createRadialGradient(128, 128, 2, 128, 128, 124);
+  grad.addColorStop(0, 'rgba(255, 250, 240, 0.92)');
+  grad.addColorStop(0.08, 'rgba(255, 232, 198, 0.55)');
+  grad.addColorStop(0.28, 'rgba(186, 214, 255, 0.14)');
+  grad.addColorStop(1, 'rgba(5, 7, 11, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 256);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 0.72,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.position.copy(position);
+  sprite.scale.set(14, 14, 1);
+  return sprite;
 }
 
 export function detectSoftwareWebGL(): boolean {

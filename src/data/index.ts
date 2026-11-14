@@ -4,6 +4,13 @@ import { LOCATIONS } from './locations';
 import { MISSIONS } from './missions';
 import { SOURCES, FACT_CHECK_NOTES, RESEARCH_REPORT_URL } from './sources';
 import { SCIENCE_TOPICS } from './scienceTopics';
+import {
+  ARCHIVAL_MEDIA,
+  getHeroMediaForLocation,
+  getMediaCountByBody,
+  getMediaForArtifact,
+  getMediaForLocation
+} from './media';
 import { Artifact, CelestialBody, MissionRecord, PlanetaryLocation, SourceRecord } from '../types/space';
 
 export const ALL_ARTIFACTS: Artifact[] = [...MOON_ARTIFACTS, ...MARS_ARTIFACTS];
@@ -16,7 +23,12 @@ export {
   SOURCES,
   FACT_CHECK_NOTES,
   SCIENCE_TOPICS,
-  RESEARCH_REPORT_URL
+  RESEARCH_REPORT_URL,
+  ARCHIVAL_MEDIA,
+  getMediaForLocation,
+  getMediaForArtifact,
+  getHeroMediaForLocation,
+  getMediaCountByBody
 };
 
 export function getArtifactsByBody(body: CelestialBody): Artifact[] {

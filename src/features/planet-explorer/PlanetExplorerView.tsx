@@ -40,6 +40,7 @@ export const PlanetExplorerView: React.FC<PlanetExplorerViewProps> = ({
 }) => {
   const [sunAzimuthDeg, setSunAzimuthDeg] = useState(body === 'Moon' ? 38 : 48);
   const [surveyLighting, setSurveyLighting] = useState(false);
+  const [autoOrbit, setAutoOrbit] = useState(true);
   const [resetSignal, setResetSignal] = useState(0);
   const [focusLocationId, setFocusLocationId] = useState<string | null>(selectedLocationId);
   const [dockExpanded, setDockExpanded] = useState(true);
@@ -74,6 +75,7 @@ export const PlanetExplorerView: React.FC<PlanetExplorerViewProps> = ({
         selectedLocationId={selectedLocationId}
         sunAzimuthDeg={sunAzimuthDeg}
         surveyLighting={surveyLighting}
+        autoOrbit={autoOrbit}
         resetSignal={resetSignal}
         focusLocationId={focusLocationId}
         onSelectLocation={onSelectLocation}
@@ -206,6 +208,17 @@ export const PlanetExplorerView: React.FC<PlanetExplorerViewProps> = ({
                   }`}
                 >
                   {surveyLighting ? 'Uniform Light: On' : 'Uniform Light: Off'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAutoOrbit((v) => !v)}
+                  className={`px-2.5 py-1 rounded border text-[11px] font-medium transition-colors whitespace-nowrap ${
+                    autoOrbit
+                      ? 'border-cyan-400/60 bg-cyan-400/10 text-cyan-200'
+                      : 'border-white/15 bg-[#111827] text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {autoOrbit ? 'Idle Orbit: On' : 'Idle Orbit: Off'}
                 </button>
               </div>
             </div>

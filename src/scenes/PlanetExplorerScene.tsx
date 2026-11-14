@@ -9,9 +9,11 @@ import {
   LocationCluster
 } from '../utils/coordinates';
 import {
+  createDistantSunSprite,
   createMarsAtmosphereMesh,
   createMarsTextureSet,
   createMoonTextureSet,
+  createOrbitalDustParticles,
   createStarfield,
   detectSoftwareWebGL
 } from '../utils/planetaryTextures';
@@ -49,6 +51,7 @@ interface PlanetExplorerSceneProps {
   selectedLocationId: string | null;
   sunAzimuthDeg: number;
   surveyLighting: boolean;
+  autoOrbit: boolean;
   resetSignal: number;
   focusLocationId: string | null;
   onSelectLocation: (location: PlanetaryLocation) => void;
@@ -56,9 +59,9 @@ interface PlanetExplorerSceneProps {
 }
 
 const PLANET_RADIUS = 2.4;
-const MIN_CAM_DIST = 3.25;
+const MIN_CAM_DIST = 3.2;
 const MAX_CAM_DIST = 8.6;
-const DEFAULT_CAM_DIST = 5.6;
+const DEFAULT_CAM_DIST = 5.45;
 
 export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
   body,
@@ -67,6 +70,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
   selectedLocationId,
   sunAzimuthDeg,
   surveyLighting,
+  autoOrbit,
   resetSignal,
   focusLocationId,
   onSelectLocation,
@@ -83,6 +87,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
   const hoveredIdRef = useRef(hoveredClusterId);
   const sunAzimuthRef = useRef(sunAzimuthDeg);
   const surveyLightingRef = useRef(surveyLighting);
+  const autoOrbitRef = useRef(autoOrbit);
   const onSelectRef = useRef(onSelectLocation);
   const onZoomChangeRef = useRef(onCameraZoomChange);
 
@@ -92,6 +97,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
   hoveredIdRef.current = hoveredClusterId;
   sunAzimuthRef.current = sunAzimuthDeg;
   surveyLightingRef.current = surveyLighting;
+  autoOrbitRef.current = autoOrbit;
   onSelectRef.current = onSelectLocation;
   onZoomChangeRef.current = onCameraZoomChange;
 
@@ -108,7 +114,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     if (!focusLocationId) return;
     const loc = locations.find((l) => l.id === focusLocationId);
     if (loc && loc.latitude !== null && loc.longitude !== null) {
-      focusTriggerRef.current(loc.latitude, loc.longitude, 4.15);
+      focusTriggerRef.current(loc.latitude, loc.longitude, 4.1);
     }
   }, [focusLocationId, locations]);
 
@@ -138,7 +144,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMappingExposure = 1.12;
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
@@ -146,15 +152,14 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#05070b');
+    scene.background = new THREE.Color('#04060a');
 
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = envTex;
     pmrem.dispose();
 
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 200);
-    // Initial angle faces near-side Moon (~15°E) or Mars (~75°E)
+    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 240);
     const initialLon = body === 'Moon' ? 18 : 85;
     const initialPos = latLonToVector3(12, initialLon, DEFAULT_CAM_DIST);
     camera.position.copy(initialPos);
@@ -169,19 +174,38 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     controls.zoomSpeed = 0.85;
     controls.enableDamping = !isSoftwareGl;
     controls.dampingFactor = 0.07;
+    controls.autoRotate = false;
+    controls.autoRotateSpeed = 0.28;
 
-    // Lighting rig
-    const sunKey = new THREE.DirectionalLight('#fff6ea', 2.85);
+    // Lighting rig + distant physical solar corona synced to Sun Angle
+    const sunKey = new THREE.DirectionalLight('#fff5e7', 2.95);
     scene.add(sunKey);
 
-    const hemiFill = new THREE.HemisphereLight('#3b5582', '#0b101b', 0.38);
+    const sunCorona = createDistantSunSprite(new THREE.Vector3(36, 12, 0));
+    scene.add(sunCorona);
+
+    const hemiFill = new THREE.HemisphereLight('#385380', '#080c15', 0.36);
     scene.add(hemiFill);
+
+    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.42);
+    rimLight.position.set(-8, -3, -6);
+    scene.add(rimLight);
 
     const surveyAmbient = new THREE.AmbientLight('#dbeafe', 0.12);
     scene.add(surveyAmbient);
 
-    const stars = createStarfield(isSoftwareGl ? 700 : 1500, 90);
-    scene.add(stars);
+    // Multi-depth starfield + subtle orbital dust ring
+    const starsFar = createStarfield(isSoftwareGl ? 450 : 1050, 118, 0.24, 0.72, 1958);
+    const starsMid = createStarfield(isSoftwareGl ? 280 : 620, 74, 0.32, 0.88, 1971);
+    const orbitalDust = createOrbitalDustParticles(
+      isSoftwareGl ? 80 : 180,
+      PLANET_RADIUS + 0.45,
+      PLANET_RADIUS + 2.4,
+      body === 'Mars' ? '#e2a384' : '#94a3b8'
+    );
+    scene.add(starsFar);
+    scene.add(starsMid);
+    scene.add(orbitalDust);
 
     // Planet sphere
     const texSet =
@@ -193,7 +217,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     const planetMat = new THREE.MeshStandardMaterial({
       map: texSet.map,
       bumpMap: texSet.bumpMap,
-      bumpScale: body === 'Moon' ? 0.036 : 0.032,
+      bumpScale: body === 'Moon' ? 0.044 : 0.038,
       roughnessMap: texSet.roughnessMap,
       roughness: body === 'Moon' ? 0.92 : 0.88,
       metalness: 0.02
@@ -212,7 +236,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     const gridMat = new THREE.LineBasicMaterial({
       color: '#64748b',
       transparent: true,
-      opacity: 0.14
+      opacity: 0.13
     });
     for (let lat = -60; lat <= 60; lat += 30) {
       const r = Math.cos(THREE.MathUtils.degToRad(lat)) * (PLANET_RADIUS + 0.004);
@@ -242,50 +266,71 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     const markerGroup = new THREE.Group();
     scene.add(markerGroup);
 
-    // Reusable marker geometries
-    const pinGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.09, 8);
-    const diamondGeo = new THREE.OctahedronGeometry(0.042, 0);
-    const hexGeo = new THREE.CylinderGeometry(0.038, 0.038, 0.025, 6);
-    const prismGeo = new THREE.ConeGeometry(0.04, 0.06, 3);
-    const ringGeo = new THREE.TorusGeometry(0.045, 0.012, 8, 24);
-    const clusterGeo = new THREE.TorusGeometry(0.062, 0.014, 10, 28);
-    const hitSphereGeo = new THREE.SphereGeometry(0.11, 10, 10);
+    // Distinct marker geometries per artifact category
+    const pinGeo = new THREE.CylinderGeometry(0.011, 0.011, 0.095, 8);
+    const diamondGeo = new THREE.OctahedronGeometry(0.045, 0);
+    const hexGeo = new THREE.CylinderGeometry(0.04, 0.044, 0.026, 6);
+    const prismGeo = new THREE.ConeGeometry(0.04, 0.065, 3);
+    const ringGeo = new THREE.TorusGeometry(0.046, 0.011, 8, 24);
+    const haloRingGeo = new THREE.RingGeometry(0.052, 0.066, 28);
+    const clusterGeo = new THREE.TorusGeometry(0.066, 0.014, 10, 28);
+    const hitSphereGeo = new THREE.SphereGeometry(0.115, 10, 10);
     const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 
     const matRover = new THREE.MeshStandardMaterial({
       color: '#22d3ee',
       emissive: '#0891b2',
-      emissiveIntensity: 0.7,
-      roughness: 0.3
+      emissiveIntensity: 0.78,
+      roughness: 0.28
     });
     const matLander = new THREE.MeshStandardMaterial({
-      color: '#e2e8f0',
+      color: '#f1f5f9',
       emissive: '#38bdf8',
-      emissiveIntensity: 0.4,
-      roughness: 0.35
+      emissiveIntensity: 0.45,
+      roughness: 0.32
     });
     const matInstrument = new THREE.MeshStandardMaterial({
       color: '#67e8f9',
       emissive: '#0e7490',
-      emissiveIntensity: 0.55,
-      roughness: 0.3
+      emissiveIntensity: 0.62,
+      roughness: 0.28
     });
     const matImpact = new THREE.MeshStandardMaterial({
       color: '#f59e0b',
       emissive: '#b45309',
-      emissiveIntensity: 0.65,
-      roughness: 0.4
+      emissiveIntensity: 0.7,
+      roughness: 0.38
     });
     const matSelected = new THREE.MeshStandardMaterial({
       color: '#ffffff',
       emissive: '#22d3ee',
-      emissiveIntensity: 1.2,
-      roughness: 0.2
+      emissiveIntensity: 1.35,
+      roughness: 0.18
     });
     const matStem = new THREE.MeshBasicMaterial({ color: '#94a3b8' });
+    const matHaloCyan = new THREE.MeshBasicMaterial({
+      color: '#22d3ee',
+      transparent: true,
+      opacity: 0.48,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const matHaloAmber = new THREE.MeshBasicMaterial({
+      color: '#f59e0b',
+      transparent: true,
+      opacity: 0.48,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
 
     let activeClusters: LocationCluster[] = [];
     const clickableHitMeshes: THREE.Mesh[] = [];
+    const animatedHolders: Array<{
+      holder: THREE.Group;
+      halo: THREE.Mesh;
+      id: string;
+      isSelected: boolean;
+    }> = [];
     let lastClusterSignature = '';
 
     const rebuildMarkerMeshes = (clusters: LocationCluster[]) => {
@@ -299,11 +344,12 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
         markerGroup.remove(markerGroup.children[0]);
       }
       clickableHitMeshes.length = 0;
+      animatedHolders.length = 0;
 
       const up = new THREE.Vector3(0, 1, 0);
 
       for (const cluster of clusters) {
-        const pos = latLonToVector3(cluster.latitude, cluster.longitude, PLANET_RADIUS + 0.015);
+        const pos = latLonToVector3(cluster.latitude, cluster.longitude, PLANET_RADIUS + 0.014);
         const normal = pos.clone().normalize();
         const holder = new THREE.Group();
         holder.position.copy(pos);
@@ -312,6 +358,8 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
         const isSelected =
           !cluster.isCluster && cluster.locations[0]?.id === selectedIdRef.current;
 
+        let category: MarkerCategory | 'cluster' = 'cluster';
+
         if (cluster.isCluster) {
           const ring = new THREE.Mesh(clusterGeo, matRover);
           ring.rotation.x = Math.PI / 2;
@@ -319,11 +367,13 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
           holder.add(ring);
         } else {
           const loc = cluster.locations[0];
-          const category = getLocationMarkerCategory(loc, artifactsRef.current);
+          category = getLocationMarkerCategory(loc, artifactsRef.current);
 
-          const stem = new THREE.Mesh(pinGeo, matStem);
-          stem.position.y = 0.045;
-          holder.add(stem);
+          if (category !== 'impact') {
+            const stem = new THREE.Mesh(pinGeo, matStem);
+            stem.position.y = 0.048;
+            holder.add(stem);
+          }
 
           const mat = isSelected
             ? matSelected
@@ -337,23 +387,32 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
 
           if (category === 'rover') {
             const head = new THREE.Mesh(diamondGeo, mat);
-            head.position.y = 0.1;
+            head.position.y = 0.105;
             holder.add(head);
           } else if (category === 'lander') {
             const head = new THREE.Mesh(hexGeo, mat);
-            head.position.y = 0.09;
+            head.position.y = 0.095;
             holder.add(head);
           } else if (category === 'instrument') {
             const head = new THREE.Mesh(prismGeo, mat);
-            head.position.y = 0.095;
+            head.position.y = 0.098;
             holder.add(head);
           } else {
             const head = new THREE.Mesh(ringGeo, mat);
             head.rotation.x = Math.PI / 2;
-            head.position.y = 0.04;
+            head.position.y = 0.025;
             holder.add(head);
           }
         }
+
+        // Surface tangent halo beacon ring
+        const halo = new THREE.Mesh(
+          haloRingGeo,
+          category === 'impact' ? matHaloAmber : matHaloCyan
+        );
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.y = 0.012;
+        holder.add(halo);
 
         const hitMesh = new THREE.Mesh(hitSphereGeo, hitMat);
         hitMesh.position.y = 0.06;
@@ -361,6 +420,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
         holder.add(hitMesh);
         clickableHitMeshes.push(hitMesh);
 
+        animatedHolders.push({ holder, halo, id: cluster.id, isSelected });
         markerGroup.add(holder);
       }
     };
@@ -368,6 +428,8 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     // Smooth camera fly-to target state
     let camTransitionActive = false;
     const camTargetPos = new THREE.Vector3();
+    let userDragging = false;
+    let lastUserInteractionTime = -Infinity;
 
     focusTriggerRef.current = (lat: number, lon: number, targetDist: number) => {
       latLonToVector3(lat, lon, targetDist, camTargetPos);
@@ -386,7 +448,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     if (selectedIdRef.current) {
       const existing = locationsRef.current.find((l) => l.id === selectedIdRef.current);
       if (existing && existing.latitude !== null && existing.longitude !== null) {
-        latLonToVector3(existing.latitude, existing.longitude, 4.3, camera.position);
+        latLonToVector3(existing.latitude, existing.longitude, 4.25, camera.position);
         controls.update();
       }
     }
@@ -395,11 +457,18 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
       renderer.compile(scene, camera);
     }
 
-    // Cancel scripted camera fly-to when user grabs globe
     const onControlStart = () => {
       camTransitionActive = false;
+      userDragging = true;
+      lastUserInteractionTime = performance.now();
+    };
+    const onControlEnd = () => {
+      userDragging = false;
+      lastUserInteractionTime = performance.now();
+      requestRender();
     };
     controls.addEventListener('start', onControlStart);
+    controls.addEventListener('end', onControlEnd);
 
     // Raycasting for markers
     const raycaster = new THREE.Raycaster();
@@ -409,12 +478,12 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
 
     const handleClusterInteraction = (cluster: LocationCluster) => {
       if (cluster.isCluster) {
-        const nextDist = Math.max(MIN_CAM_DIST + 0.35, camera.position.length() * 0.65);
+        const nextDist = Math.max(MIN_CAM_DIST + 0.3, camera.position.length() * 0.65);
         focusTriggerRef.current(cluster.latitude, cluster.longitude, nextDist);
       } else if (cluster.locations[0]) {
         const loc = cluster.locations[0];
         if (loc.latitude !== null && loc.longitude !== null) {
-          focusTriggerRef.current(loc.latitude, loc.longitude, 4.15);
+          focusTriggerRef.current(loc.latitude, loc.longitude, 4.1);
         }
         onSelectRef.current(loc);
       }
@@ -428,7 +497,6 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
       const hits = raycaster.intersectObjects(clickableHitMeshes, false);
       if (hits.length > 0) {
         const cl = hits[0].object.userData.cluster as LocationCluster;
-        // Verify point is on front hemisphere facing camera
         const markerWorldPos = new THREE.Vector3();
         hits[0].object.getWorldPosition(markerWorldPos);
         const toCam = camera.position.clone().sub(markerWorldPos).normalize();
@@ -449,16 +517,18 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
       if (nextId !== hoveredIdRef.current) {
         setHoveredClusterId(nextId);
       }
-      renderer.domElement.style.cursor = cl ? 'pointer' : 'grab';
+      renderer.domElement.style.cursor = cl ? 'pointer' : userDragging ? 'grabbing' : 'grab';
     };
 
     const onPointerDown = (e: PointerEvent) => {
       pointerDownPos = { x: e.clientX, y: e.clientY };
+      lastUserInteractionTime = performance.now();
       renderer.domElement.style.cursor = 'grabbing';
     };
 
     const onPointerUp = (e: PointerEvent) => {
       renderer.domElement.style.cursor = 'grab';
+      lastUserInteractionTime = performance.now();
       const moved = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
       if (moved > 7) return;
       const cl = getHitCluster(e.clientX, e.clientY);
@@ -471,7 +541,6 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
 
-    // On-demand + damping render loop
     let frameId = 0;
     let disposed = false;
     let renderBusy = false;
@@ -486,17 +555,15 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     const updateProjectedLabels = () => {
       const w = renderer.domElement.clientWidth || width;
       const h = renderer.domElement.clientHeight || height;
-      const camDist = camera.position.length();
       const nextMarkers: ProjectedMarker[] = [];
 
       for (const cluster of activeClusters) {
-        latLonToVector3(cluster.latitude, cluster.longitude, PLANET_RADIUS + 0.14, _pos);
+        latLonToVector3(cluster.latitude, cluster.longitude, PLANET_RADIUS + 0.145, _pos);
         _normal.copy(_pos).normalize();
         _toCam.copy(camera.position).sub(_pos).normalize();
 
-        // Hide markers behind the planetary limb
         const facingDot = _normal.dot(_toCam);
-        if (facingDot < 0.16) continue;
+        if (facingDot < 0.15) continue;
 
         _proj.copy(_pos).project(camera);
         if (_proj.z > 1) continue;
@@ -511,14 +578,6 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
         const category: MarkerCategory | 'cluster' = cluster.isCluster
           ? 'cluster'
           : getLocationMarkerCategory(cluster.locations[0], artifactsRef.current);
-
-        // Keep viewport clean: show labels on clusters, selected/hovered markers, or when zoomed closer
-        const showLabel =
-          cluster.isCluster || isSelected || isHovered || camDist < 5.1;
-
-        if (!showLabel && activeClusters.length > 10) {
-          // Still project clickable pin dot without verbose text when far out
-        }
 
         nextMarkers.push({
           id: cluster.id,
@@ -576,17 +635,20 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
         const dt = Math.min(0.1, (now - lastTime) / 1000);
         lastTime = now;
 
-        // Sun illumination angle
+        // Sun illumination angle + aligned distant solar corona
         const az = THREE.MathUtils.degToRad(sunAzimuthRef.current);
         sunKey.position.set(Math.cos(az) * 9, 3.2, -Math.sin(az) * 9);
+        sunCorona.position.set(Math.cos(az) * 48, 14, -Math.sin(az) * 48);
         if (surveyLightingRef.current) {
           sunKey.intensity = 1.85;
-          hemiFill.intensity = 1.05;
+          hemiFill.intensity = 1.08;
           surveyAmbient.intensity = 0.72;
+          sunCorona.material.opacity = 0.22;
         } else {
-          sunKey.intensity = 2.85;
-          hemiFill.intensity = 0.38;
+          sunKey.intensity = 2.95;
+          hemiFill.intensity = 0.36;
           surveyAmbient.intensity = 0.12;
+          sunCorona.material.opacity = 0.65;
         }
 
         // Smooth camera fly-to
@@ -596,7 +658,6 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
             camera.position.copy(camTargetPos);
             camTransitionActive = false;
           } else {
-            // Spherical slerp-like interpolation so camera arcs cleanly around planet instead of clipping through it
             const curDir = camera.position.clone().normalize();
             const tgtDir = camTargetPos.clone().normalize();
             const curLen = camera.position.length();
@@ -616,6 +677,23 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
           }
         }
 
+        // Idle planetary rotation — automatically yields during drag, hover, focus, or transition
+        const idleCooldownElapsed = now - lastUserInteractionTime > 1600;
+        const shouldAutoOrbit =
+          !isSoftwareGl &&
+          !prefersReducedMotion &&
+          autoOrbitRef.current &&
+          !userDragging &&
+          !camTransitionActive &&
+          !hoveredIdRef.current &&
+          idleCooldownElapsed;
+
+        controls.autoRotate = shouldAutoOrbit;
+
+        if (!prefersReducedMotion && shouldAutoOrbit) {
+          orbitalDust.rotation.y += dt * 0.022;
+        }
+
         const dampingMoved = controls.update();
         const camDist = camera.position.length();
 
@@ -626,6 +704,23 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
           MAX_CAM_DIST
         );
         rebuildMarkerMeshes(activeClusters);
+
+        // Restrained animated marker beacon scaling + halo pulse
+        const pulsePhase = now * 0.0028;
+        for (let i = 0; i < animatedHolders.length; i++) {
+          const item = animatedHolders[i];
+          const isHov = item.id === hoveredIdRef.current;
+          const targetScale = item.isSelected ? 1.38 : isHov ? 1.24 : 1.0;
+          const nextS = THREE.MathUtils.damp(item.holder.scale.x, targetScale, 10, dt);
+          item.holder.scale.setScalar(nextS);
+
+          if (!prefersReducedMotion && (item.isSelected || isHov || shouldAutoOrbit)) {
+            const wave = 1 + Math.sin(pulsePhase + i * 0.7) * (item.isSelected || isHov ? 0.24 : 0.1);
+            item.halo.scale.setScalar(wave);
+          } else {
+            item.halo.scale.setScalar(1);
+          }
+        }
 
         if (onZoomChangeRef.current) {
           const pct = Math.round(
@@ -639,7 +734,12 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
 
         const finish = () => {
           renderBusy = false;
-          if (renderDirty || stillAnimating || (dampingMoved && !isSoftwareGl)) {
+          if (
+            renderDirty ||
+            stillAnimating ||
+            shouldAutoOrbit ||
+            (dampingMoved && !isSoftwareGl)
+          ) {
             requestRender();
           }
         };
@@ -675,7 +775,6 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     };
     renderer.domElement.addEventListener('webglcontextlost', onContextLost);
 
-    // Expose re-render trigger when props update
     (container as HTMLDivElement & { __requestRender?: () => void }).__requestRender = requestRender;
     requestRender();
 
@@ -685,6 +784,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
       clearTimeout(frameId);
       controls.removeEventListener('change', onControlsChange);
       controls.removeEventListener('start', onControlStart);
+      controls.removeEventListener('end', onControlEnd);
       controls.dispose();
       window.removeEventListener('resize', onResize);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
@@ -711,6 +811,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
       hexGeo.dispose();
       prismGeo.dispose();
       ringGeo.dispose();
+      haloRingGeo.dispose();
       clusterGeo.dispose();
       hitSphereGeo.dispose();
       hitMat.dispose();
@@ -720,9 +821,16 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
       matImpact.dispose();
       matSelected.dispose();
       matStem.dispose();
+      matHaloCyan.dispose();
+      matHaloAmber.dispose();
 
-      stars.geometry.dispose();
-      (stars.material as THREE.Material).dispose();
+      [starsFar, starsMid, orbitalDust].forEach((pts) => {
+        pts.geometry.dispose();
+        (pts.material as THREE.Material).dispose();
+      });
+      (sunCorona.material as THREE.SpriteMaterial).map?.dispose();
+      sunCorona.material.dispose();
+
       envTex.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {
@@ -731,11 +839,10 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
     };
   }, [body]);
 
-  // Trigger render when lighting or selectedLocationId changes
   useEffect(() => {
     const el = mountRef.current as (HTMLDivElement & { __requestRender?: () => void }) | null;
     el?.__requestRender?.();
-  }, [sunAzimuthDeg, surveyLighting, selectedLocationId, hoveredClusterId]);
+  }, [sunAzimuthDeg, surveyLighting, autoOrbit, selectedLocationId, hoveredClusterId]);
 
   if (webglError) {
     return (
@@ -782,7 +889,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
           const showText = m.isCluster || m.isSelected || m.isHovered;
           const accentClass =
             m.category === 'impact'
-              ? 'border-amber-400/60 text-amber-200'
+              ? 'border-amber-400/70 text-amber-100'
               : m.isSelected
                 ? 'border-cyan-400 text-white'
                 : 'border-white/25 text-slate-100';
@@ -794,11 +901,11 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 if (m.isCluster) {
-                  focusTriggerRef.current(m.cluster.latitude, m.cluster.longitude, 3.9);
+                  focusTriggerRef.current(m.cluster.latitude, m.cluster.longitude, 3.85);
                 } else if (m.cluster.locations[0]) {
                   const loc = m.cluster.locations[0];
                   if (loc.latitude !== null && loc.longitude !== null) {
-                    focusTriggerRef.current(loc.latitude, loc.longitude, 4.15);
+                    focusTriggerRef.current(loc.latitude, loc.longitude, 4.1);
                   }
                   onSelectLocation(loc);
                 }
@@ -808,14 +915,14 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
               style={{
                 transform: `translate3d(${m.x}px, ${m.y}px, 0) translate(-50%, -100%)`
               }}
-              className={`pointer-events-auto absolute top-0 left-0 -mt-2 transition-opacity duration-150 focus-visible:outline-2 focus-visible:outline-cyan-400 ${
-                showText ? 'z-20 opacity-100' : 'z-10 opacity-85 hover:opacity-100'
+              className={`pointer-events-auto absolute top-0 left-0 -mt-2 transition-all duration-150 focus-visible:outline-2 focus-visible:outline-cyan-400 ${
+                showText ? 'z-20 opacity-100 scale-105' : 'z-10 opacity-85 hover:opacity-100'
               }`}
               aria-label={`${m.label} (${m.sublabel})`}
             >
               {showText ? (
                 <div
-                  className={`px-2.5 py-1.5 rounded-md border bg-[#090d16]/92 shadow-lg text-left whitespace-nowrap ${accentClass}`}
+                  className={`px-2.5 py-1.5 rounded-md border bg-[#080c14]/94 shadow-lg text-left whitespace-nowrap ${accentClass}`}
                 >
                   <div className="text-[11px] font-semibold tracking-wide leading-tight flex items-center gap-1.5">
                     <span
@@ -824,7 +931,9 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
                           ? 'bg-amber-400'
                           : m.category === 'rover'
                             ? 'bg-cyan-400'
-                            : 'bg-slate-200'
+                            : m.category === 'instrument'
+                              ? 'bg-cyan-200'
+                              : 'bg-slate-200'
                       }`}
                     />
                     <span>{m.label}</span>
@@ -834,7 +943,7 @@ export const PlanetExplorerScene: React.FC<PlanetExplorerSceneProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="px-1.5 py-0.5 rounded bg-[#090d16]/85 border border-white/15 text-[10px] font-medium text-slate-200 whitespace-nowrap hover:border-cyan-400/70">
+                <div className="px-1.5 py-0.5 rounded bg-[#080c14]/88 border border-white/15 text-[10px] font-medium text-slate-200 whitespace-nowrap hover:border-cyan-400/70">
                   {m.label}
                 </div>
               )}

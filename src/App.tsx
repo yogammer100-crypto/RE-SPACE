@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode, Suspense, lazy, useMemo, useState } from 'react';
+import { MotionConfig } from 'motion/react';
 import {
   ALL_ARTIFACTS,
   FACT_CHECK_NOTES,
@@ -11,12 +12,14 @@ import {
   getArtifactsForLocation,
   getLocationById,
   getLocationsByBody,
+  getMediaForArtifact,
+  getMediaForLocation,
   getMissionById,
   getMissionsForLocation,
   getSourceById,
   getUnlocatedArtifactsByBody
 } from './data';
-import { AppView, Artifact, CelestialBody, PlanetaryLocation } from './types/space';
+import { AppView, Artifact, CelestialBody, MediaItem, PlanetaryLocation } from './types/space';
 import { Navbar } from './components/Navbar';
 import { WorldSelectorOverlay } from './components/WorldSelectorOverlay';
 
@@ -135,6 +138,15 @@ export default function App() {
     return map;
   }, []);
 
+  const artifactMediaMap = useMemo(() => {
+    const map: Record<string, MediaItem[]> = {};
+    for (const a of ALL_ARTIFACTS) {
+      const items = getMediaForArtifact(a.id);
+      if (items.length > 0) map[a.id] = items;
+    }
+    return map;
+  }, []);
+
   const selectedLocation = useMemo(
     () => (selectedLocationId ? getLocationById(selectedLocationId) ?? null : null),
     [selectedLocationId]
@@ -241,7 +253,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#05070b] text-slate-100 flex flex-col">
+    <MotionConfig reducedMotion="user">
+      <div className="min-h-screen bg-[#05070b] text-slate-100 flex flex-col">
       <Navbar
         currentView={currentView}
         selectedBody={selectedBody}
@@ -300,6 +313,8 @@ export default function App() {
                 sources={selectedLocation.sourceIds
                   .map((id) => getSourceById(id))
                   .filter((s): s is NonNullable<typeof s> => Boolean(s))}
+                mediaItems={getMediaForLocation(selectedLocation.id)}
+                artifactMediaMap={artifactMediaMap}
                 onBackToGlobe={() => {
                   setSelectedBody(selectedLocation.body);
                   setCurrentView('planet');
@@ -320,6 +335,7 @@ export default function App() {
                     : null
                 }
                 mission={getMissionById(selectedArtifact.missionId) ?? null}
+                mediaItems={artifactMediaMap[selectedArtifact.id] ?? []}
                 relatedArtifacts={selectedArtifact.relatedArtifacts
                   .map((id) => getArtifactById(id))
                   .filter((a): a is Artifact => Boolean(a))}
@@ -342,6 +358,7 @@ export default function App() {
               <MissionExplorerView
                 missions={MISSIONS}
                 artifactsById={artifactsById}
+                artifactMediaMap={artifactMediaMap}
                 initialMissionId={selectedMissionId}
                 onSelectArtifact={handleSelectArtifact}
                 onNavigateToGlobeLocation={handleOpenGlobeAtLocation}
@@ -353,6 +370,7 @@ export default function App() {
             <Suspense fallback={<LoadingState label="Loading Global Artifact Archive..." />}>
               <GlobalArchiveView
                 artifacts={ALL_ARTIFACTS}
+                artifactMediaMap={artifactMediaMap}
                 onSelectArtifact={handleSelectArtifact}
               />
             </Suspense>
@@ -412,6 +430,7 @@ export default function App() {
           </div>
         </footer>
       )}
-    </div>
+      </div>
+    </MotionConfig>
   );
 }

@@ -5,17 +5,20 @@ import {
   ArtifactStatus,
   ArtifactType,
   CelestialBody,
+  MediaItem,
   OutcomeCategory
 } from '../../types/space';
 import { formatCoordinates } from '../../utils/coordinates';
 
 interface GlobalArchiveViewProps {
   artifacts: Artifact[];
+  artifactMediaMap?: Record<string, MediaItem[]>;
   onSelectArtifact: (artifact: Artifact) => void;
 }
 
 export const GlobalArchiveView: React.FC<GlobalArchiveViewProps> = ({
   artifacts,
+  artifactMediaMap = {},
   onSelectArtifact
 }) => {
   const [query, setQuery] = useState('');
@@ -252,61 +255,81 @@ export const GlobalArchiveView: React.FC<GlobalArchiveViewProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((art) => (
-              <button
-                key={art.id}
-                type="button"
-                onClick={() => onSelectArtifact(art)}
-                className="text-left p-5 rounded-xl border border-white/10 bg-[#0b101b] hover:border-cyan-400/55 transition-colors flex flex-col justify-between gap-4"
-              >
-                <div>
-                  <div className="text-xs text-slate-400 flex flex-wrap items-center gap-1.5">
-                    <span className="text-cyan-300 font-medium">{art.body}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{art.type}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="font-mono-tabular">
-                      {art.landingDate ?? 'Date Unknown'}
+            {filtered.map((art) => {
+              const cardMedia = artifactMediaMap[art.id]?.[0] ?? null;
+              return (
+                <button
+                  key={art.id}
+                  type="button"
+                  onClick={() => onSelectArtifact(art)}
+                  className="text-left rounded-xl border border-white/10 bg-[#0b101b] hover:border-cyan-400/55 transition-colors flex flex-col justify-between overflow-hidden group"
+                >
+                  <div>
+                    {cardMedia && (
+                      <div className="relative aspect-[16/9] w-full bg-[#060910] border-b border-white/10 overflow-hidden">
+                        <img
+                          src={cardMedia.url}
+                          alt={cardMedia.alt}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                        />
+                        <div className="absolute bottom-2 left-2.5 px-2 py-0.5 rounded bg-[#05070b]/85 border border-white/15 text-[10px] font-mono-tabular text-cyan-200">
+                          {cardMedia.mediaClass} · {cardMedia.catalogId}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="p-5 pb-0">
+                      <div className="text-xs text-slate-400 flex flex-wrap items-center gap-1.5">
+                        <span className="text-cyan-300 font-medium">{art.body}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{art.type}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono-tabular">
+                          {art.landingDate ?? 'Date Unknown'}
+                        </span>
+                      </div>
+
+                      <h2 className="text-base font-semibold text-white mt-2 leading-snug">
+                        {art.name}
+                      </h2>
+
+                      <div className="text-xs text-slate-300 mt-1.5">
+                        {art.mission} · {art.operator}
+                      </div>
+
+                      <div className="text-xs font-mono-tabular text-slate-400 mt-3 truncate">
+                        {art.locationName ?? 'Location Unknown'}
+                      </div>
+                      <div className="text-[11px] font-mono-tabular text-slate-500 mt-0.5 truncate">
+                        {formatCoordinates(
+                          art.latitude,
+                          art.longitude,
+                          art.coordinateConfidence
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mx-5 mt-4 mb-5 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+                    <span
+                      className={
+                        art.outcomeCategory === 'Failed Landing'
+                          ? 'text-amber-300'
+                          : 'text-slate-300'
+                      }
+                    >
+                      {art.status}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-cyan-300 font-medium">
+                      <span>Inspect</span>
+                      <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                     </span>
                   </div>
-
-                  <h2 className="text-base font-semibold text-white mt-2 leading-snug">
-                    {art.name}
-                  </h2>
-
-                  <div className="text-xs text-slate-300 mt-1.5">
-                    {art.mission} · {art.operator}
-                  </div>
-
-                  <div className="text-xs font-mono-tabular text-slate-400 mt-3 truncate">
-                    {art.locationName ?? 'Location Unknown'}
-                  </div>
-                  <div className="text-[11px] font-mono-tabular text-slate-500 mt-0.5 truncate">
-                    {formatCoordinates(
-                      art.latitude,
-                      art.longitude,
-                      art.coordinateConfidence
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
-                  <span
-                    className={
-                      art.outcomeCategory === 'Failed Landing'
-                        ? 'text-amber-300'
-                        : 'text-slate-300'
-                    }
-                  >
-                    {art.status}
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-cyan-300 font-medium">
-                    <span>Inspect</span>
-                    <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-                  </span>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,24 +1,30 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  Camera,
   ExternalLink,
   Globe,
+  Image as ImageIcon,
   MapPin
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import {
   Artifact,
+  MediaItem,
   MissionRecord,
   PlanetaryLocation,
   SourceRecord
 } from '../../types/space';
 import { ArtifactSchematicScene } from '../../scenes/ArtifactSchematicScene';
+import { ArchivalImage, ArchivalLightbox } from '../../components/ArchivalImage';
 import { formatCoordinates, formatLongitudeEast } from '../../utils/coordinates';
 
 interface ArtifactDetailViewProps {
   artifact: Artifact;
   location: PlanetaryLocation | null;
   mission: MissionRecord | null;
+  mediaItems: MediaItem[];
   relatedArtifacts: Artifact[];
   sources: SourceRecord[];
   onBack: () => void;
@@ -32,6 +38,7 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
   artifact,
   location,
   mission,
+  mediaItems,
   relatedArtifacts,
   sources,
   onBack,
@@ -40,7 +47,13 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
   onSelectArtifact,
   onOpenMission
 }) => {
+  const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
+  const [visualMode, setVisualMode] = useState<'gallery' | 'schematic'>(
+    mediaItems.length > 0 ? 'gallery' : 'schematic'
+  );
+
   const hasCoords = artifact.latitude !== null && artifact.longitude !== null;
+  const primaryPhoto = mediaItems[0] ?? null;
 
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-[#05070b] text-slate-100">
@@ -55,7 +68,12 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
         </button>
 
         {/* Artifact Header */}
-        <header className="pb-8 border-b border-white/10">
+        <motion.header
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="pb-8 border-b border-white/10"
+        >
           <div className="text-xs text-slate-400 flex flex-wrap items-center gap-2 mb-3">
             <span className="text-cyan-300 font-medium">{artifact.body}</span>
             <span aria-hidden="true">·</span>
@@ -66,6 +84,14 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
             <span className="font-mono-tabular">
               {artifact.landingDate ?? 'Date Unknown'}
             </span>
+            {mediaItems.length > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono-tabular text-cyan-200">
+                  {mediaItems.length} Archival {mediaItems.length === 1 ? 'Plate' : 'Plates'}
+                </span>
+              </>
+            )}
           </div>
 
           <h1 className="font-display text-3xl sm:text-5xl font-semibold tracking-tight text-white [text-wrap:balance]">
@@ -106,19 +132,120 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
               </button>
             )}
           </div>
-        </header>
+        </motion.header>
 
         {/* Main 2-Column Editorial Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 pt-8">
-          {/* Left 7 cols: Schematic + Narrative */}
+          {/* Left 7 cols: Visual Exhibition (Authentic Photography vs 3D Schematic) + Narrative */}
           <div className="lg:col-span-7 space-y-8">
-            <ArtifactSchematicScene
-              schematicType={artifact.schematicType}
-              body={artifact.body}
-              caption={artifact.schematicCaption}
-            />
+            {/* Explicit Visual Evidence vs 3D Technical Schematic Switcher / Paired Exhibition */}
+            <section className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs uppercase tracking-wider text-slate-400 font-medium flex items-center gap-2">
+                  <Camera className="w-3.5 h-3.5 text-cyan-300" aria-hidden="true" />
+                  <span>Visual Documentation & Schematic</span>
+                </div>
 
-            <section className="space-y-3">
+                <div
+                  role="tablist"
+                  aria-label="Artifact visual mode"
+                  className="inline-flex items-center gap-1 p-1 rounded-lg bg-[#0b101b] border border-white/10"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={visualMode === 'gallery'}
+                    onClick={() => setVisualMode('gallery')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      visualMode === 'gallery'
+                        ? 'bg-cyan-400 text-slate-950'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Archival Photography ({mediaItems.length})
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={visualMode === 'schematic'}
+                    onClick={() => setVisualMode('schematic')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      visualMode === 'schematic'
+                        ? 'bg-cyan-400 text-slate-950'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    3D Technical Schematic
+                  </button>
+                </div>
+              </div>
+
+              {visualMode === 'gallery' ? (
+                mediaItems.length > 0 ? (
+                  <div className="space-y-4">
+                    {primaryPhoto && (
+                      <ArchivalImage
+                        item={primaryPhoto}
+                        aspectClass="aspect-[16/10]"
+                        onInspect={setLightboxItem}
+                      />
+                    )}
+                    {mediaItems.length > 1 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {mediaItems.slice(1).map((item) => (
+                          <ArchivalImage
+                            key={item.id}
+                            item={item}
+                            aspectClass="aspect-[16/10]"
+                            compact
+                            onInspect={setLightboxItem}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="border border-white/10 bg-[#0b101b] rounded-xl p-6 space-y-3">
+                    <div className="inline-flex items-center gap-2 text-sm font-medium text-slate-200">
+                      <ImageIcon className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                      <span>
+                        No verified surface or orbital plate is bundled locally for this record.
+                      </span>
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                      Many early impactors, failed descent probes, and dispersed hardware fragments were never photographed directly on the surface or have not been resolved cleanly in public orbital surveys. To preserve historical accuracy, RE:SPACE never invents photographs—switch to the interactive{' '}
+                      <button
+                        type="button"
+                        onClick={() => setVisualMode('schematic')}
+                        className="text-cyan-300 hover:underline font-medium"
+                      >
+                        3D Technical Schematic Illustration
+                      </button>{' '}
+                      or inspect the official source citations in the sidebar.
+                    </p>
+                  </div>
+                )
+              ) : (
+                <ArtifactSchematicScene
+                  schematicType={artifact.schematicType}
+                  body={artifact.body}
+                  caption={artifact.schematicCaption}
+                />
+              )}
+
+              {/* When viewing Gallery with photos available, always offer immediate secondary access to the 3D schematic below if user wants both, or keep clean toggle + subtle schematic preview card */}
+              {visualMode === 'gallery' && mediaItems.length > 0 && (
+                <div className="pt-2">
+                  <ArtifactSchematicScene
+                    schematicType={artifact.schematicType}
+                    body={artifact.body}
+                    caption={artifact.schematicCaption}
+                  />
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-3 pt-4 border-t border-white/10">
               <h2 className="font-display text-2xl font-semibold text-white">
                 Purpose & Engineering Function
               </h2>
@@ -138,6 +265,34 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
                 {artifact.missionJourney}
               </p>
             </section>
+
+            {mission && mission.majorEvents.length > 0 && (
+              <section className="space-y-3 pt-6 border-t border-white/10">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-display text-xl font-semibold text-white">
+                    Mission Chronology Highlights
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => onOpenMission(mission.id)}
+                    className="text-xs text-cyan-300 hover:text-cyan-200 font-medium"
+                  >
+                    Open {mission.name} Record
+                  </button>
+                </div>
+                <ol className="relative border-l border-white/15 pl-5 space-y-3 ml-1.5">
+                  {mission.majorEvents.map((evt, idx) => (
+                    <li key={idx} className="relative text-sm text-slate-300 leading-relaxed">
+                      <span
+                        className="absolute -left-[25px] top-2 w-2 h-2 rounded-full bg-cyan-400/80 ring-4 ring-[#05070b]"
+                        aria-hidden="true"
+                      />
+                      {evt}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
 
             <section className="space-y-3 pt-6 border-t border-white/10">
               <h2 className="font-display text-2xl font-semibold text-white">
@@ -175,7 +330,7 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
             )}
           </div>
 
-          {/* Right 5 cols: Accession Spec Table + Related Hardware + Sources */}
+          {/* Right 5 cols: Accession Spec Table + Location Context + Related Hardware + Sources */}
           <aside className="lg:col-span-5 space-y-6">
             <div className="border border-white/10 bg-[#0b101b] rounded-xl p-5">
               <h2 className="text-xs uppercase tracking-wider text-slate-400 font-medium mb-4">
@@ -269,6 +424,28 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
               )}
             </div>
 
+            {location && (
+              <div className="border border-white/10 bg-[#0b101b] rounded-xl p-5 space-y-3">
+                <div className="text-xs uppercase tracking-wider text-slate-400 font-medium">
+                  Landing Site Context
+                </div>
+                <div className="text-sm font-semibold text-white">{location.name}</div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {location.terrainSummary}
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onOpenLocation(location)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200"
+                  >
+                    <span>Explore {location.name} Exhibition</span>
+                    <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {relatedArtifacts.length > 0 && (
               <div className="border border-white/10 bg-[#0b101b] rounded-xl p-5 space-y-3">
                 <h2 className="text-xs uppercase tracking-wider text-slate-400 font-medium">
@@ -327,6 +504,8 @@ export const ArtifactDetailView: React.FC<ArtifactDetailViewProps> = ({
           </aside>
         </div>
       </div>
+
+      <ArchivalLightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />
     </div>
   );
 };
