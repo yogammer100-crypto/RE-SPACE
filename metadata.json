@@ -1,0 +1,6 @@
+{
+  "name": "RE:SPACE — Digital Museum of Human Space Heritage",
+  "description": "An interactive 3D digital museum cataloging verified human-made artifacts on the Moon and Mars from 1958 to 2026.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
